@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+BİST Otomatik Tarama - Manuel Teknik Analiz (pandas-ta YOK!)
+Her gün seans kapanışında çalışır, güçlü hisseleri filtreler ve Telegram'a gönderir
+"""
+
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import requests
+import time
+
+# TELEGRAM BİLGİLERİ
+TELEGRAM_TOKEN = "8455173046:AAECKdZcTVnt3naPDzI3udwwfj23nyv4uMs"
+TELEGRAM_CHAT_ID = "-1003670397485"
+
+# BİST HİSSE LİSTESİ
+BIST_HISSELER = """
+QNBTR,ASELS,KLRHO,GARAN,ENKAI,KCHOL,THYAO,AKBNK,FROTO,TUPRS,BIMAS,VAKBN,
+HALKB,YKBNK,DSTKF,TCELL,TTKOM,SAHOL,CCOLA,EREGL,KENT,ASTOR,GUBRF,TOASO,
+TRALT,HEDEF,TERA,SISE,MAGEN,OYAKC,ISDMR,ENJSA,TAVHL,AEFES,TURSG,MGROS,
+SASA,QNBFK,PGSUS,ZRGYO,BRSAN,KLNMA,DMLKT,MPARK,PASEU,ARCLK,AKSEN,AGHOL,
+ECILC,TRGYO,KTLEV,ENERY,ISMEN,TABGD,UFUK,BRYAT,CVKMD,AHGAZ,LYDHO,LIDER,
+GLRMK,PEKGY,RYGYO,RALYH,TBORG,SELEC,OTKAR,DOHOL,TTRAK,ANSGR,TRMET,RGYAS,
+AYGAZ,ANHYT,ULKER,CIMSA,EFOR,ALARK,PETKM,BSOKE,DOAS,CLEBI,AGESA,ODINE,
+INVES,AKSA,SOKM,TSKB,AKCNS,MAVI,IEYHO,GRSEL,SARKY,RYSAS,YGGYO,RAYSG,
+NUHCM,GENIL,ECZYT,CWENE,DAPGM,ADGYO,PAHOL,KRDMA,GRTHO,BASGZ,CMENT,GLYHO,
+TKFEN,BTCIM,BRISA,HEKTS,TEHOL,TRENJ,EUPWR,KLYPV,ALKLC,SKBNK,BMSTL,LYDYE,
+GESAN,CEMZY,NTHOL,KUYAS,OBAMS,ALBRK,POLTK,IZENR,AKFYE,OZKGY,EGEEN,KCAER,
+ARMGD,KONYA,AVPGY,MOGAN,ENTRA,TRHOL,AKSGY,ISGYO,ARASE,MIATK,BFREN,BINBN,
+SNGYO,FENER,KLKIM,LILAK,BALSU,SUNTK,ISKPL,CANTE,BANVT,AYDEM,VERUS,ZOREN,
+PSGYO,HLGYO,MEGMT,CRFSA,MRSHL,KZBGY,OYYAT,ASUZU,AHSGY,GSRAY,ENSRI,LMKDC,
+AKFIS,ALFAS,MOPAS,ALTNY,ULUSE,FZLGY,DEVA,KLSER,SMRTG,YYLGD,LOGO,YEOTK,
+ARDYZ,EGPRO,KSTUR,GWIND,KAYSE,TCKRC,ISFIN,KONTR,KOTON,JANTS,TRCAS,HTTBT,
+VESBE,PATEK,TMSN,ECOGR,DOFRB,AKGRT,POLHO,AYCES,ESCAR,BINHO,TUKAS,VAKFA,
+ICBCT,BULGS,BERA,NETCD,IZMDC,BARMA,OZATD,MEYSU,PRKAB,SONME,SDTTR,EUREN,
+ZERGY,KBORU,AKFGY,GARFA,TATEN,ALGYO,SRVGY,MOBTL,A1CAP,TNZTP,KORDS,VAKKO,
+VESTL,DGGYO,OFSYM,VSNMD,GOZDE,VAKFN,VKGYO,BUCIM,GLCVY,GUNDG,BASCM,GEREL,
+PKART,THYAO,ASELS,GARAN,TUPRS,SAHOL,EREGL,KCHOL,SISE,AKBNK,TAVHL,PGSUS
+""".replace('\n', '').split(',')
+
+HISSE_LISTESI = [h.strip() + '.IS' for h in BIST_HISSELER if h.strip()][:100]  # İlk 100 hisse (test için)
+
+def telegram_gonder(mesaj):
+    """Telegram'a mesaj gönder"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": mesaj, "parse_mode": "HTML"}
+        response = requests.post(url, data=data, timeout=10)
+        return response.json()
+    except Exception as e:
+        print(f"Telegram hatası: {e}")
+        return None
+
+def veri_cek(ticker, period="3mo"):
+    """Hisse verisini çek"""
+    try:
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period)
+        if df.empty or len(df) < 50:
+            return None
+        return df
+    except:
+        return None
+
+# MANUEL TEKNİK ANALİZ FONKSİYONLARI
+
+def calculate_rsi(prices, period=14):
+    """RSI hesapla"""
+    delta = prices.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_adx(df, period=14):
+    """ADX hesapla"""
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
+    
+    plus_dm = high.diff()
+    minus_dm = low.diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm > 0] = 0
+    
+    tr1 = high - low
+    tr2 = abs(high - close.shift())
+    tr3 = abs(low - close.shift())
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    atr = tr.rolling(window=period).mean()
+    plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr)
+    minus_di = 100 * (abs(minus_dm).rolling(window=period).mean() / atr)
+    
+    dx = 100 * abs(plus_di - minus_di) / (plus_di + minus_di)
+    adx = dx.rolling(window=period).mean()
+    
+    return adx
+
+def calculate_mfi(df, period=14):
+    """MFI hesapla"""
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    money_flow = typical_price * df['Volume']
+    
+    positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0)
+    negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0)
+    
+    positive_mf = positive_flow.rolling(window=period).sum()
+    negative_mf = negative_flow.rolling(window=period).sum()
+    
+    mfi = 100 - (100 / (1 + positive_mf / negative_mf))
+    return mfi
+
+def calculate_stochastic(df, k_period=14, d_period=3):
+    """Stochastic hesapla"""
+    low_min = df['Low'].rolling(window=k_period).min()
+    high_max = df['High'].rolling(window=k_period).max()
+    
+    k = 100 * (df['Close'] - low_min) / (high_max - low_min)
+    d = k.rolling(window=d_period).mean()
+    
+    return k, d
+
+def calculate_vwap(df):
+    """VWAP hesapla"""
+    typical_price = (df['High'] + df['Low'] + df['Close']) / 3
+    return (typical_price * df['Volume']).cumsum() / df['Volume'].cumsum()
+
+def hisse_analiz(ticker):
+    """Tek bir hisseyi analiz et"""
+    try:
+        df = veri_cek(ticker)
+        if df is None or len(df) < 50:
+            return None
+        
+        # Teknik analiz hesapla
+        df['RSI'] = calculate_rsi(df['Close'], 14)
+        df['ADX'] = calculate_adx(df, 14)
+        df['MFI'] = calculate_mfi(df, 14)
+        df['STOCH_K'], df['STOCH_D'] = calculate_stochastic(df, 14, 3)
+        df['VWAP'] = calculate_vwap(df)
+        
+        # Son değerler
+        son = df.iloc[-1]
+        fiyat = son['Close']
+        
+        # Kontroller
+        if pd.isna(son['ADX']) or pd.isna(son['MFI']) or pd.isna(son['RSI']):
+            return None
+        
+        adx = son['ADX']
+        mfi = son['MFI']
+        rsi = son['RSI']
+        stoch_k = son['STOCH_K']
+        stoch_d = son['STOCH_D']
+        vwap_val = son['VWAP']
+        
+        # Destek/Direnç
+        destek = df['Low'].tail(20).min()
+        direnc = df['High'].tail(20).max()
+        
+        # VWAP Breakout
+        vwap_breakout = ((fiyat - vwap_val) / vwap_val) * 100
+        
+        # MTF Uyum (basit)
+        haftalik = df['Close'].tail(5).mean() > df['Close'].tail(10).head(5).mean()
+        aylik = df['Close'].tail(20).mean() > df['Close'].tail(40).head(20).mean()
+        mtf_uyumlu = haftalik and aylik
+        
+        # Risk/Ödül
+        stop = destek
+        hedef = fiyat + (fiyat - stop) * 1.5
+        risk = fiyat - stop
+        odul = hedef - fiyat
+        risk_odul = risk / odul if odul > 0 else 999
+        
+        # FİLTRE (YUMUŞAK)
+        filtre_gecti = (
+            adx > 18 and
+            mfi > 40 and
+            vwap_breakout > 1.5 and
+            mtf_uyumlu and
+            rsi > 35 and rsi < 75 and
+            stoch_k > stoch_d and
+            stoch_k > 35 and
+            risk_odul < 0.7
+        )
+        
+        if not filtre_gecti:
+            return None
+        
+        # Skor
+        skor = min(adx, 40) + min(mfi / 2, 30) + min(vwap_breakout * 2, 20) + (10 if mtf_uyumlu else 0)
+        
+        return {
+            'ticker': ticker.replace('.IS', ''),
+            'fiyat': fiyat,
+            'adx': adx,
+            'mfi': mfi,
+            'rsi': rsi,
+            'stoch_k': stoch_k,
+            'stoch_d': stoch_d,
+            'vwap': vwap_val,
+            'vwap_breakout': vwap_breakout,
+            'destek': destek,
+            'hedef': hedef,
+            'risk_odul': risk_odul,
+            'mtf_uyum': mtf_uyumlu,
+            'skor': skor
+        }
+        
+    except Exception as e:
+        print(f"{ticker} analiz hatası: {e}")
+        return None
+
+def rapor_olustur(hisse_data):
+    """PKART formatında rapor"""
+    ticker = hisse_data['ticker']
+    skor = hisse_data['skor']
+    
+    yildiz = "⭐⭐⭐⭐⭐" if skor >= 90 else "⭐⭐⭐⭐" if skor >= 75 else "⭐⭐⭐"
+    mtf_emoji = "✅" if hisse_data['mtf_uyum'] else "⚠️"
+    
+    rapor = f"""
+<b>📊 TEKNİK ANALİZ RAPORU</b>
+
+<b>{ticker}</b>
+
+Hisse <b>{hisse_data['fiyat']:.2f} TL</b> seviyesinde. ADX <b>{hisse_data['adx']:.1f}</b> ile güçlü yükseliş trendi ve MFI <b>{hisse_data['mfi']:.1f}</b> ile pozitif para akışı görülüyor. VWAP <b>{hisse_data['vwap']:.2f} TL</b> üzerinde güçlü bir breakout gerçekleşmiş (<b>%{hisse_data['vwap_breakout']:.1f}</b>). <b>{hisse_data['destek']:.2f} TL</b> desteği korundukça <b>{hisse_data['hedef']:.2f} TL</b> hedefi hedeflenebilir. MTF güçlü uyum {mtf_emoji} gösterirken, RSI <b>{hisse_data['rsi']:.1f}</b> ve Stochastic K=<b>{hisse_data['stoch_k']:.1f}</b> / D=<b>{hisse_data['stoch_d']:.1f}</b> seviyeleri dikkat çekiyor; Risk/Ödül oranı (<b>{hisse_data['risk_odul']:.2f}</b>).
+
+<b>SKOR: {skor:.0f}/100</b> {yildiz}
+"""
+    return rapor
+
+def main():
+    """Ana fonksiyon"""
+    print(f"🚀 Tarama başlatılıyor... Toplam hisse: {len(HISSE_LISTESI)}")
+    telegram_gonder(f"🔍 BİST Tarama Başladı\n\nToplam {len(HISSE_LISTESI)} hisse taranıyor...")
+    
+    basarili_hisseler = []
+    hata_sayisi = 0
+    
+    for i, ticker in enumerate(HISSE_LISTESI):
+        try:
+            print(f"[{i+1}/{len(HISSE_LISTESI)}] {ticker} analiz ediliyor...")
+            
+            sonuc = hisse_analiz(ticker)
+            if sonuc:
+                basarili_hisseler.append(sonuc)
+                print(f"  ✅ {ticker} - GÜÇLÜ! Skor: {sonuc['skor']:.0f}")
+            
+            if (i + 1) % 25 == 0:
+                print(f"  📊 İlerleme: {i+1}/{len(HISSE_LISTESI)} ({len(basarili_hisseler)} güçlü)")
+            
+            time.sleep(0.3)
+            
+        except Exception as e:
+            hata_sayisi += 1
+            print(f"  ❌ {ticker} hatası: {e}")
+            continue
+    
+    print(f"\n✅ Tarama tamamlandı!")
+    print(f"   Toplam: {len(HISSE_LISTESI)}")
+    print(f"   Güçlü: {len(basarili_hisseler)}")
+    print(f"   Hata: {hata_sayisi}")
+    
+    basarili_hisseler.sort(key=lambda x: x['skor'], reverse=True)
+    
+    if len(basarili_hisseler) == 0:
+        telegram_gonder("⚠️ Bugün filtre kriterlerini geçen hisse bulunamadı.")
+    else:
+        tarih = datetime.now().strftime("%d/%m/%Y %H:%M")
+        baslik = f"""
+🔥 <b>BİST GÜNLÜK RAPOR</b>
+📅 {tarih}
+
+✅ Toplam <b>{len(basarili_hisseler)}</b> güçlü hisse bulundu!
+
+━━━━━━━━━━━━━━━━━━━━━
+"""
+        telegram_gonder(baslik)
+        
+        for i, hisse in enumerate(basarili_hisseler[:15], 1):
+            rapor = rapor_olustur(hisse)
+            telegram_gonder(rapor)
+            time.sleep(2)
+        
+        if len(basarili_hisseler) > 15:
+            telegram_gonder(f"\n⚠️ Toplam {len(basarili_hisseler)} hisse bulundu, ilk 15'i gösterildi.")
+    
+    print("✅ Raporlar Telegram'a gönderildi!")
+
+if __name__ == "__main__":
+    main()
