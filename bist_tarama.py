@@ -198,21 +198,32 @@ def hisse_analiz(ticker):
         return None
 
 def rapor_olustur(hisse_data):
-    """PKART formatında rapor"""
+    """Pavyon formatında neon rapor :)"""
     ticker = hisse_data['ticker']
     skor = hisse_data['skor']
     
-    yildiz = "⭐⭐⭐⭐⭐" if skor >= 90 else "⭐⭐⭐⭐" if skor >= 75 else "⭐⭐⭐"
-    mtf_emoji = "✅" if hisse_data['mtf_uyum'] else "⚠️"
+    yildiz = "🌟🌟🌟🌟🌟" if skor >= 90 else "⭐⭐⭐⭐" if skor >= 75 else "⭐⭐⭐"
+    mtf_emoji = "✅ ONAYLI" if hisse_data['mtf_uyum'] else "⚠️ DİKKAT"
     
     rapor = f"""
-<b>📊 TEKNİK ANALİZ RAPORU</b>
+🔥 <b>[ {ticker} ] - VIP SİNYAL DETAYI</b> 🔥
+━━━━━━━━━━━━━━━━━━━━━
+💰 <b>Anlık Fiyat:</b> {hisse_data['fiyat']:.2f} TL
+🎯 <b>Potansiyel Hedef:</b> {hisse_data['hedef']:.2f} TL
+🛡️ <b>Ana Destek (Stop):</b> {hisse_data['destek']:.2f} TL
+━━━━━━━━━━━━━━━━━━━━━
+<b>--- ⚙️ TEKNİK GÖSTERGELER ---</b>
+📈 <b>Trend (ADX):</b> {hisse_data['adx']:.1f} <i>(Güçlü Kalkış!)</i>
+💵 <b>Para Girişi (MFI):</b> {hisse_data['mfi']:.1f} <i>(Hacim Destekli)</i>
+🚀 <b>VWAP Kopuşu:</b> %{hisse_data['vwap_breakout']:.1f}
+⏳ <b>Zaman Uyum (MTF):</b> {mtf_emoji}
 
-<b>{ticker}</b>
-
-Hisse <b>{hisse_data['fiyat']:.2f} TL</b> seviyesinde. ADX <b>{hisse_data['adx']:.1f}</b> ile güçlü yükseliş trendi ve MFI <b>{hisse_data['mfi']:.1f}</b> ile pozitif para akışı görülüyor. VWAP <b>{hisse_data['vwap']:.2f} TL</b> üzerinde güçlü bir breakout gerçekleşmiş (<b>%{hisse_data['vwap_breakout']:.1f}</b>). <b>{hisse_data['destek']:.2f} TL</b> desteği korundukça <b>{hisse_data['hedef']:.2f} TL</b> hedefi hedeflenebilir. MTF güçlü uyum {mtf_emoji} gösterirken, RSI <b>{hisse_data['rsi']:.1f}</b> ve Stochastic K=<b>{hisse_data['stoch_k']:.1f}</b> / D=<b>{hisse_data['stoch_d']:.1f}</b> seviyeleri dikkat çekiyor; Risk/Ödül oranı (<b>{hisse_data['risk_odul']:.2f}</b>).
-
-<b>SKOR: {skor:.0f}/100</b> {yildiz}
+<b>--- 📊 OSİLATÖR DURUMU ---</b>
+⚡ <b>RSI:</b> {hisse_data['rsi']:.1f} <i>(Şişme Yok)</i>
+🎯 <b>Stoch K/D:</b> {hisse_data['stoch_k']:.1f} / {hisse_data['stoch_d']:.1f} <i>(AL Konumunda)</i>
+⚖️ <b>Risk/Ödül Oranı:</b> {hisse_data['risk_odul']:.2f}
+━━━━━━━━━━━━━━━━━━━━━
+🏆 <b>SİSTEM SKORU: {skor:.0f}/100</b> {yildiz}
 """
     return rapor
 
