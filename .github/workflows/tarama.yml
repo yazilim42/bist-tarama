@@ -28,8 +28,3 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
         python bist_tarama.py
-        - name: Tarayıcıyı Çalıştır (Trend Takibi)
-        run: python bist_tarama.py
-
-      - name: Fırsat Tarayıcıyı Çalıştır (Dip Dönüş)
-        run: python bist_firsat_taramasi.py
